@@ -11,7 +11,6 @@ const { promisify } = require('util');
 const pipeline = promisify(stream.pipeline);
 
 const app = express();
-const compression = require('compression');
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'db.json');
 const TEMPLATE_FILE = path.join(__dirname, 'db.template.json');
@@ -60,6 +59,7 @@ class CacheManager {
         this.type = type;
         this.searchCache = {};
         this.detailCache = {};
+        this.db = null;
         this.init();
     }
 
@@ -72,30 +72,78 @@ class CacheManager {
                 try { this.detailCache = JSON.parse(fs.readFileSync(DETAIL_CACHE_JSON)); } catch (e) { }
             }
         } else if (this.type === 'sqlite') {
-            // (SQLite implementation simplified for brevity)
+            try {
+                const Database = require('better-sqlite3');
+                this.db = new Database(CACHE_DB_FILE);
+
+                // 创建缓存表
+                this.db.exec(`
+                    CREATE TABLE IF NOT EXISTS cache (
+                        category TEXT NOT NULL,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        expire INTEGER NOT NULL,
+                        PRIMARY KEY (category, key)
+                    )
+                `);
+
+                // 创建索引加速过期查询
+                this.db.exec(`CREATE INDEX IF NOT EXISTS idx_expire ON cache(expire)`);
+
+                // 清理过期数据
+                this.db.prepare('DELETE FROM cache WHERE expire < ?').run(Date.now());
+
+                console.log(`[SQLite Cache] Database initialized: ${CACHE_DB_FILE}`);
+            } catch (e) {
+                console.error('[SQLite Cache] Init failed, falling back to memory:', e.message);
+                this.type = 'memory';
+            }
         }
     }
 
     get(category, key) {
         if (this.type === 'memory') {
-            return category === 'search' ? this.searchCache[key] : this.detailCache[key];
+            const data = category === 'search' ? this.searchCache[key] : this.detailCache[key];
+            if (data && data.expire > Date.now()) return data.value;
+            return null;
         } else if (this.type === 'json') {
             const data = category === 'search' ? this.searchCache[key] : this.detailCache[key];
             if (data && data.expire > Date.now()) return data.value;
             return null;
+        } else if (this.type === 'sqlite' && this.db) {
+            try {
+                const row = this.db.prepare(
+                    'SELECT value FROM cache WHERE category = ? AND key = ? AND expire > ?'
+                ).get(category, key, Date.now());
+                return row ? JSON.parse(row.value) : null;
+            } catch (e) {
+                console.error('[SQLite Cache] Get error:', e.message);
+                return null;
+            }
         }
         return null;
     }
 
     set(category, key, value, ttlSeconds = 600) {
         const expire = Date.now() + ttlSeconds * 1000;
-        const item = { value, expire };
-        if (this.type === 'memory' || this.type === 'json') {
+
+        if (this.type === 'memory') {
+            const item = { value, expire };
             if (category === 'search') this.searchCache[key] = item;
             else this.detailCache[key] = item;
-
-            if (this.type === 'json') {
-                this.saveDisk(); // Simple impl: save on every set (optimize for production!)
+        } else if (this.type === 'json') {
+            const item = { value, expire };
+            if (category === 'search') this.searchCache[key] = item;
+            else this.detailCache[key] = item;
+            this.saveDisk();
+        } else if (this.type === 'sqlite' && this.db) {
+            try {
+                this.db.prepare(`
+                    INSERT OR REPLACE INTO cache (category, key, value, expire)
+                    VALUES (?, ?, ?, ?)
+                `).run(category, key, JSON.stringify(value), expire);
+            } catch (e) {
+                console.error('[SQLite Cache] Set error:', e.message);
             }
         }
     }
@@ -106,16 +154,70 @@ class CacheManager {
             fs.writeFileSync(DETAIL_CACHE_JSON, JSON.stringify(this.detailCache));
         }
     }
+
+    // 定期清理过期缓存 (SQLite)
+    cleanup() {
+        if (this.type === 'sqlite' && this.db) {
+            try {
+                const result = this.db.prepare('DELETE FROM cache WHERE expire < ?').run(Date.now());
+                if (result.changes > 0) {
+                    console.log(`[SQLite Cache] Cleaned ${result.changes} expired entries`);
+                }
+            } catch (e) {
+                console.error('[SQLite Cache] Cleanup error:', e.message);
+            }
+        }
+    }
 }
 
 const cacheManager = new CacheManager(CACHE_TYPE);
 
-app.use(compression());
+// 定期清理过期缓存 (每小时执行一次)
+setInterval(() => {
+    cacheManager.cleanup();
+}, 60 * 60 * 1000);
+
+// ========== 中间件配置 ==========
+
+// 启用 Gzip/Brotli 压缩
+const compression = require('compression');
+app.use(compression({
+    level: 6,  // 压缩级别 1-9，6 是性能与压缩率的平衡点
+    threshold: 1024,  // 只压缩大于 1KB 的响应
+    filter: (req, res) => {
+        // 不压缩 SSE 事件流
+        if (req.headers['accept'] === 'text/event-stream') {
+            return false;
+        }
+        return compression.filter(req, res);
+    }
+}));
+
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static('public', {
-    maxAge: '7d', // 延长至 7 天
+
+// ========== 静态资源配置 (带长缓存) ==========
+
+// 静态资源 30天缓存 (libs 目录 - CSS/JS)
+app.use('/libs', express.static('public/libs', {
+    maxAge: '30d',  // 30天浏览器缓存
+    immutable: true,  // 告诉浏览器文件不会变化
+    etag: true,
+    lastModified: true
+}));
+
+// 图片缓存目录 - 30天缓存
+app.use('/cache', express.static('public/cache', {
+    maxAge: '30d',
+    immutable: true,
     etag: true
+}));
+
+// HTML 和其他静态文件 - 30天缓存
+app.use(express.static('public', {
+    maxAge: '30d',
+    etag: true,
+    lastModified: true
 }));
 
 // ========== 路由定义 ==========
@@ -265,8 +367,8 @@ app.get('/api/search', async (req, res) => {
                 site_name: site.name
             })) : [];
 
-            // 缓存结果
-            cacheManager.set('search', cacheKey, { list }, 600);
+            // 缓存结果 (1小时)
+            cacheManager.set('search', cacheKey, { list }, 3600);
 
             // 发送结果到客户端
             if (list.length > 0) {
@@ -322,7 +424,7 @@ app.post('/api/search', async (req, res) => {
             })) : []
         };
 
-        cacheManager.set('search', cacheKey, result, 600); // 缓存10分钟
+        cacheManager.set('search', cacheKey, result, 3600); // 缓存1小时
         res.json(result);
     } catch (error) {
         console.error(`[Search Error] ${site.name}:`, error.message);

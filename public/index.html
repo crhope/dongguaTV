@@ -8,20 +8,31 @@
     <meta name="referrer" content="no-referrer">
     <title>E视界</title>
 
+    <!-- 性能优化：DNS 预解析和预连接 -->
+    <link rel="dns-prefetch" href="//api.themoviedb.org">
+    <link rel="dns-prefetch" href="//image.tmdb.org">
+    <link rel="preconnect" href="https://api.themoviedb.org" crossorigin>
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin>
+
     <!-- PWA Setup -->
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icon.png" type="image/png">
     <meta name="theme-color" content="#141414">
 
-    <!-- 本地静态资源 (避免 CDN 访问问题) -->
+    <!-- 关键 CSS (优先加载) -->
     <link href="libs/css/bootstrap.min.css" rel="stylesheet">
-    <link href="libs/css/animate.min.css" rel="stylesheet">
     <link rel="stylesheet" href="libs/css/fontawesome.min.css">
 
-    <script data-cfasync="false" src="libs/js/hls.min.js"></script>
-    <script data-cfasync="false" src="libs/js/DPlayer.min.js"></script>
+    <!-- 非关键 CSS (延迟加载) -->
+    <link href="libs/css/animate.min.css" rel="stylesheet" media="print" onload="this.media='all'">
+
+    <!-- 关键脚本 (立即加载) -->
     <script data-cfasync="false" src="libs/js/vue.global.prod.min.js"></script>
-    <script data-cfasync="false" src="libs/js/bootstrap.bundle.min.js"></script>
+
+    <!-- 非关键脚本 (延迟加载) -->
+    <script data-cfasync="false" src="libs/js/hls.min.js" defer></script>
+    <script data-cfasync="false" src="libs/js/DPlayer.min.js" defer></script>
+    <script data-cfasync="false" src="libs/js/bootstrap.bundle.min.js" defer></script>
 
     <style>
         :root {
@@ -37,6 +48,11 @@
             display: none !important;
         }
 
+        /* 性能优化：平滑滚动 */
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             background-color: var(--bg-color);
             color: var(--text-main);
@@ -44,11 +60,25 @@
             min-height: 100vh;
             padding-bottom: 60px;
             overflow-x: hidden;
-            /* Firefox Mobile 闪烁修复 */
             -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
-            backface-visibility: hidden;
-            transform: translateZ(0);
+            /* 文字渲染优化 */
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* 性能优化：图片默认优化 */
+        img {
+            content-visibility: auto;
+            /* 图片占位背景 */
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+        }
+
+        /* 性能优化：懒加载区域 */
+        .section-container {
+            content-visibility: auto;
+            contain-intrinsic-size: auto 350px;
         }
 
         /* 修复 Firefox 滚动时的黑色方块 */
@@ -884,13 +914,16 @@
             inset: 0;
             background-size: cover;
             background-position: center top;
-            transition: transform 10s ease;
+            /* 性能优化：使用 GPU 加速的 transform */
+            transition: transform 10s cubic-bezier(0.25, 0.1, 0.25, 1);
+            transform: translateZ(0);
+            will-change: transform;
             mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
             -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
         }
 
         .carousel-item.active .hero-bg {
-            transform: scale(1.05);
+            transform: scale(1.05) translateZ(0);
         }
 
         .hero-overlay {
@@ -1164,10 +1197,8 @@
             padding: 0 5%;
             margin-bottom: 40px;
             min-height: 100px;
-            /* 性能优化：跳过不可见区域的渲染 */
-            content-visibility: auto;
-            contain-intrinsic-size: 1px 400px;
-            /* 确保 Intersection Observer 能检测到进入视口 */
+            /* 使用 isolation 创建独立的层叠上下文 */
+            isolation: isolate;
         }
 
         /* 分类标题与排序切换 */
@@ -1207,6 +1238,9 @@
             align-items: center;
             margin-bottom: 25px;
             padding: 0 10px;
+            /* 确保展开按钮不被上方区域的卡片遮盖 */
+            position: relative;
+            z-index: 20;
         }
 
         .section-line {
@@ -1236,6 +1270,10 @@
         /* 滚动容器 */
         .scroll-container {
             position: relative;
+            z-index: 0;
+            /* 限制内部元素的层叠范围 */
+            overflow: visible;
+            /* 允许卡片 hover 效果 */
         }
 
         .hot-row {
@@ -1254,15 +1292,6 @@
             /* 强制 GPU 层 */
             background-color: transparent;
             /* 避免背景重绘 */
-            /* 布局稳定性修复 */
-            min-height: 340px;
-            /* 预留足够高度，防止切换排序时容器坍塌导致的页面跳动 */
-            transition: opacity 0.3s ease;
-        }
-
-        .hot-row.loading {
-            opacity: 0.5;
-            pointer-events: none;
         }
 
         .hot-row>.hot-card,
@@ -1324,17 +1353,18 @@
             min-width: 150px;
             width: 150px;
             cursor: pointer;
-            transition: 0.3s;
             position: relative;
-            /* Firefox Mobile 闪烁修复 - 独立分层 */
-            backface-visibility: hidden;
-            transform-style: preserve-3d;
-            contain: content;
+            /* 性能优化：只在 hover 时添加 transform */
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            /* 布局优化 */
+            contain: layout style;
         }
 
         .hot-card:hover {
-            transform: scale(1.08);
+            transform: scale(1.08) translateZ(0);
             z-index: 10;
+            /* 优化：仅在 hover 时启用 will-change */
+            will-change: transform;
         }
 
         /* 历史卡片 - 不随 hover 缩放，只有内容缩放 */
@@ -1444,7 +1474,17 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transition: opacity 0.5s;
+            /* 性能优化：图片加载动画 */
+            transition: opacity 0.3s ease;
+            opacity: 1;
+            /* 图片解码优化 */
+            image-rendering: -webkit-optimize-contrast;
+        }
+
+        /* 图片加载前的骨架屏效果 */
+        .poster-wrap img[src=""],
+        .poster-wrap img:not([src]) {
+            opacity: 0;
         }
 
         .rank-badge {
@@ -1756,26 +1796,52 @@
 
         /* 展开/收起按钮 */
         .expand-toggle {
-            font-size: 13px;
-            color: #888;
+            font-size: 12px;
+            font-weight: 500;
+            color: #aaa;
             cursor: pointer;
-            margin-left: 15px;
-            transition: color 0.2s;
+            margin-left: auto;
             white-space: nowrap;
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .expand-toggle:hover {
             color: #fff;
+            background: rgba(229, 9, 20, 0.15);
+            border-color: rgba(229, 9, 20, 0.4);
+            box-shadow: 0 4px 12px rgba(229, 9, 20, 0.2);
+            z-index: 10;
+            position: relative;
+        }
+
+        .expand-toggle:active {
+            transform: scale(0.98);
         }
 
         .expand-toggle i {
-            margin-left: 4px;
-            font-size: 11px;
-            transition: transform 0.3s;
+            font-size: 10px;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .expand-toggle.expanded {
+            background: rgba(229, 9, 20, 0.1);
+            border-color: rgba(229, 9, 20, 0.3);
+            color: #ff6b6b;
         }
 
         .expand-toggle.expanded i {
             transform: rotate(180deg);
+        }
+
+        .expand-toggle.expanded:hover {
+            background: rgba(229, 9, 20, 0.2);
         }
 
         /* 网格展开布局 - 使用 flexbox 保持固定卡片宽度 */
@@ -2437,8 +2503,7 @@
             </div>
             <!-- 动态生成的榜单 Rows -->
             <div class="section-container animate__animated animate__fadeInUp"
-                v-for="(config, key, index) in rowConfigs" :key="key" :ref="key + '-section'" :data-row-key="key"
-                :data-key="key">
+                v-for="(config, key, index) in rowConfigs" :key="key" :ref="key + '-section'" :data-row-key="key">
                 <!-- 标题区（始终显示，用于懒加载触发） -->
                 <div class="section-header" style="display: flex; align-items: center;">
                     <div class="section-line"></div>
@@ -2470,10 +2535,9 @@
                     <div class="scroll-container" v-show="!expandedRows[key]">
                         <button class="scroll-btn left" @click="scrollRow(key, -1)" v-show="rowLeftButtons[key]"><i
                                 class="fas fa-chevron-left"></i></button>
-                        <div class="hot-row" :class="{ loading: pageRefreshingKeys[key] }" :ref="key"
-                            @scroll="onRowScroll(key)">
+                        <div class="hot-row" :ref="key" @scroll="onRowScroll(key)">
                             <div class="hot-card" v-for="item in rowLists[key]" :key="item.id"
-                                @click="openInfoModal(item)">
+                                @click="autoSearch(item.title || item.name)">
                                 <div class="poster-wrap">
                                     <img :src="getPosterUrl(item.poster_path)" loading="lazy">
                                     <div class="rating-badge"><i class="fas fa-star text-warning"></i> {{
@@ -2583,28 +2647,29 @@
 
         <!-- ★★★ TMDb 电影详情弹窗 ★★★ -->
         <div class="info-modal-overlay" v-if="showInfoModal" @click.self="showInfoModal = false">
-            <div class="info-modal" v-if="infoModalData">
+            <div class="info-modal">
                 <button class="info-modal-close" @click="showInfoModal = false"><i class="fas fa-times"></i></button>
                 <div class="info-modal-backdrop"
-                    :style="{ backgroundImage: 'url(' + TMDB_BACKDROP_URL + infoModalData.backdrop_path + ')' }"></div>
+                    :style="{ backgroundImage: infoModalData ? 'url(' + TMDB_BACKDROP_URL + infoModalData.backdrop_path + ')' : '' }">
+                </div>
                 <div class="info-modal-content">
                     <div class="info-modal-poster">
-                        <img :src="TMDB_IMG_URL + infoModalData.poster_path"
-                            :alt="infoModalData.title || infoModalData.name">
+                        <img :src="infoModalData ? TMDB_IMG_URL + infoModalData.poster_path : ''"
+                            :alt="infoModalData?.title || infoModalData?.name">
                     </div>
                     <div class="info-modal-details">
-                        <h2>{{ infoModalData.title || infoModalData.name }}</h2>
+                        <h2>{{ infoModalData?.title || infoModalData?.name }}</h2>
                         <div class="info-modal-meta">
                             <span class="info-rating"><i class="fas fa-star text-warning"></i> {{
-                                infoModalData.vote_average?.toFixed(1) }}</span>
-                            <span>{{ (infoModalData.release_date || infoModalData.first_air_date)?.split('-')[0]
+                                infoModalData?.vote_average?.toFixed(1) }}</span>
+                            <span>{{ (infoModalData?.release_date || infoModalData?.first_air_date)?.split('-')[0]
                                 }}</span>
-                            <span v-if="infoModalData.runtime">{{ infoModalData.runtime }} 分钟</span>
+                            <span v-if="infoModalData?.runtime">{{ infoModalData.runtime }} 分钟</span>
                         </div>
-                        <p class="info-overview">{{ infoModalData.overview || '暂无简介' }}</p>
+                        <p class="info-overview">{{ infoModalData?.overview || '暂无简介' }}</p>
                         <div class="info-modal-btns">
                             <button class="btn-play"
-                                @click="showInfoModal = false; autoSearch(infoModalData.title || infoModalData.name)">
+                                @click="showInfoModal = false; autoSearch(infoModalData?.title || infoModalData?.name)">
                                 <i class="fas fa-play"></i> 立即播放
                             </button>
                         </div>
@@ -2982,7 +3047,6 @@
                     expandedRows: {}, // 存储各榜单的展开状态 { movieRow: true, ... }
                     viewPages: {}, // 存储各榜单展开时的查看页码 { movieRow: 1, ... }
                     pageLoadingKeys: {}, // 防止重复快速点击加载 { movieRow: true, ... }
-                    pageRefreshingKeys: {}, // 控制视觉上的“灰色遮盖”加载状态
                     rowConfigs: {
                         randomRow: { title: '随机盲盒·惊喜呈现', icon: 'fa-random', path: 'MIXED', params: '', page: 1 },
                         movieRow: { title: '全球震感·电影榜', icon: 'fa-film', path: '/trending/movie/week', params: '', page: 1 },
@@ -3033,21 +3097,39 @@
                 }
             },
             async mounted() {
-                window.addEventListener('scroll', () => { this.scrollY = window.scrollY; });
+                console.log('[VERSION] DongguaTV Code Version: 2024-12-19-v2 (showMovieInfo exists)');
+                console.log('[VERSION] Methods available:', Object.keys(this.$options.methods || {}).join(', '));
 
-                // 监听窗口大小变化，更新历史滚动按钮显示状态
-                window.addEventListener('resize', () => { this.updateHistoryScrollNeeded(); });
+                // 性能优化：使用 passive 滚动监听 + 节流
+                let scrollTicking = false;
+                window.addEventListener('scroll', () => {
+                    if (!scrollTicking) {
+                        requestAnimationFrame(() => {
+                            this.scrollY = window.scrollY;
+                            scrollTicking = false;
+                        });
+                        scrollTicking = true;
+                    }
+                }, { passive: true });
+
+                // 性能优化：resize 事件节流
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => {
+                        this.updateHistoryScrollNeeded();
+                    }, 150);
+                }, { passive: true });
 
                 // Store reference to app instance for external access
                 window.vueApp = this;
 
                 // 定义 startApp 函数供密码验证成功后调用
                 window.startApp = () => {
+                    // 确保页面滚动到顶部
+                    window.scrollTo(0, 0);
                     return this.initApp();
                 };
-
-                // 初始化懒加载观察器
-                this.initLazyObserver();
             },
             computed: {
                 groupedList() {
@@ -3433,23 +3515,34 @@
                     this.updateHistoryScrollNeeded();
                 },
 
-                // 监听分类榜单滚动事件
+                // 监听分类榜单滚动事件 (带节流优化)
                 onRowScroll(key) {
-                    let row = this.$refs[key];
-                    if (Array.isArray(row)) row = row[0]; // v-for ref 修正
-                    if (row) {
-                        // 只要滚过一点点，就显示左按钮
-                        const showLeft = row.scrollLeft > 10;
-                        if (this.rowLeftButtons[key] !== showLeft) {
-                            this.rowLeftButtons = { ...this.rowLeftButtons, [key]: showLeft };
-                        }
+                    // 节流：避免频繁触发
+                    if (this._scrollThrottleTimers?.[key]) return;
+                    if (!this._scrollThrottleTimers) this._scrollThrottleTimers = {};
 
-                        // 手机端：滑动接近右边缘时自动加载更多
-                        const nearRightEdge = row.scrollLeft + row.clientWidth >= row.scrollWidth - 300;
-                        if (nearRightEdge) {
-                            this.fetchRow(key, true);
+                    this._scrollThrottleTimers[key] = true;
+                    requestAnimationFrame(() => {
+                        let row = this.$refs[key];
+                        if (Array.isArray(row)) row = row[0]; // v-for ref 修正
+                        if (row) {
+                            // 只要滚过一点点，就显示左按钮
+                            const showLeft = row.scrollLeft > 10;
+                            if (this.rowLeftButtons[key] !== showLeft) {
+                                this.rowLeftButtons = { ...this.rowLeftButtons, [key]: showLeft };
+                            }
+
+                            // 手机端：滑动接近右边缘时自动加载更多
+                            const nearRightEdge = row.scrollLeft + row.clientWidth >= row.scrollWidth - 300;
+                            if (nearRightEdge) {
+                                this.fetchRow(key, true);
+                            }
                         }
-                    }
+                        // 节流重置 (100ms)
+                        setTimeout(() => {
+                            this._scrollThrottleTimers[key] = false;
+                        }, 100);
+                    });
                 },
                 // 切换榜单展开/收起状态
                 toggleRowExpand(key) {
@@ -3511,26 +3604,17 @@
                         this.viewPages = { ...this.viewPages, [key]: newPage };
                         console.log(`[DEBUG changeViewPage] viewPages[key] AFTER =`, this.viewPages[key]);
                         // 翻页后滚动到分类标题位置
-                        console.log(`[翻页滚动] 开始处理 key=${key}`);
                         this.$nextTick(() => {
-                            console.log(`[翻页滚动] $nextTick 触发`);
                             const refKey = key + '-section';
-                            console.log(`[翻页滚动] 查找 ref: ${refKey}`);
-                            console.log(`[翻页滚动] $refs 所有键:`, Object.keys(this.$refs));
                             const sectionRef = this.$refs[refKey];
-                            console.log(`[翻页滚动] sectionRef =`, sectionRef);
                             let el = Array.isArray(sectionRef) ? sectionRef[0] : sectionRef;
-                            console.log(`[翻页滚动] el =`, el);
                             if (el) {
-                                const rect = el.getBoundingClientRect();
-                                console.log(`[翻页滚动] rect =`, rect);
-                                console.log(`[翻页滚动] window.pageYOffset =`, window.pageYOffset);
-                                const targetY = window.pageYOffset + rect.top - 80;
-                                console.log(`[翻页滚动] 目标位置 targetY =`, targetY);
-                                window.scrollTo(0, targetY);
-                                console.log(`[翻页滚动] scrollTo 已调用`);
-                            } else {
-                                console.log(`[翻页滚动] ❌ 未找到元素`);
+                                // 使用 scrollIntoView 更可靠
+                                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                // 额外偏移（导航栏高度）
+                                setTimeout(() => {
+                                    window.scrollBy({ top: -80, behavior: 'smooth' });
+                                }, 100);
                             }
                         });
                     } else {
@@ -3614,6 +3698,7 @@
 
                 // 显示电影详情弹窗
                 showMovieInfo(item) {
+                    if (!item) return;
                     this.infoModalData = item;
                     this.showInfoModal = true;
                 },
@@ -3716,11 +3801,6 @@
                         }
                     }
 
-                    if (this.pageLoadingKeys[key]) return Promise.resolve();
-                    this.pageLoadingKeys[key] = true;
-                    // 仅在非“加载更多”模式下开启遮罩遮盖
-                    if (!loadMore) this.pageRefreshingKeys[key] = true;
-
                     const url = `/api/tmdb-proxy?path=${encodeURIComponent(config.path)}&page=${config.page}&${config.params}${sortParam}`;
                     return fetch(url)
                         .then(res => res.json())
@@ -3740,11 +3820,7 @@
                                 }
                             }
                         })
-                        .catch(err => console.error(`Fetch error for ${key}:`, err))
-                        .finally(() => {
-                            this.pageLoadingKeys[key] = false;
-                            this.pageRefreshingKeys[key] = false;
-                        });
+                        .catch(err => console.error(`Fetch error for ${key}:`, err));
                 },
 
                 // 隐秘切换排序模式
@@ -3756,16 +3832,29 @@
                     config.sortMode = config.sortMode === 'newest' ? 'popular' : 'newest';
                     console.log(`[排序切换] ${config.title} -> ${config.sortMode}`);
 
-                    // 重置该行数据并重新加载
-                    config.page = 1;
-                    // this.rowLists[key] = []; // 不再立即清空数据，防止高度坍塌导致的布局跳动
-                    this.fetchRow(key);
+                    // 动画效果：先淡出
+                    let rowEl = this.$refs[key];
+                    if (Array.isArray(rowEl)) rowEl = rowEl[0];
+                    if (rowEl) {
+                        rowEl.style.transition = 'opacity 0.2s ease';
+                        rowEl.style.opacity = '0.3';
+                    }
 
-                    // 轻微的触觉/视觉反馈 (如果是手机端)
+                    // 重置页码并重新加载
+                    config.page = 1;
+                    this.fetchRow(key).then(() => {
+                        // 动画效果：淡入
+                        if (rowEl) {
+                            rowEl.style.opacity = '1';
+                            setTimeout(() => { rowEl.style.transition = ''; }, 200);
+                        }
+                    });
+
+                    // 轻微的触觉反馈 (手机端)
                     if (window.navigator.vibrate) window.navigator.vibrate(10);
                 },
 
-                // 初始化榜单 (全部直接加载，避免懒加载问题)
+                // 初始化榜单 (优先加载首屏可见榜单)
                 fetchAllLists() {
                     const keys = Object.keys(this.rowConfigs);
 
@@ -3777,41 +3866,37 @@
 
                     console.log(`[设备检测] 宽度=${viewportWidth}, 触摸=${isTouchDevice}, UA移动=${isMobileUA}, 判定=${isMobile ? '移动端' : '桌面端'}`);
 
-                    // 混合加载前三个关键榜单（Hero 已经在 fetchHero 中加载）
-                    console.log(`[榜单加载] 优先加载关键榜单`);
-                    const priorityKeys = ['randomRow', 'movieRow', 'tvRow'];
+                    // 性能优化：优先加载首屏可见榜单 (前4个)
+                    const priorityKeys = keys.slice(0, 4);
+                    const deferredKeys = keys.slice(4);
+
+                    console.log(`[榜单加载] 优先加载 ${priorityKeys.length} 个首屏榜单`);
+
+                    // 立即并行加载优先榜单
                     priorityKeys.forEach((key, index) => {
                         setTimeout(() => {
                             this.fetchRow(key);
-                        }, index * 100);
+                        }, index * 100); // 更短的间隔
                     });
-                },
 
-                // 初始化懒加载观察器
-                initLazyObserver() {
-                    this.$nextTick(() => {
-                        const options = {
-                            root: null,
-                            rootMargin: '200px', // 提前 200px 加载
-                            threshold: 0.01
+                    // 延迟加载剩余榜单 (页面空闲时)
+                    if (deferredKeys.length > 0) {
+                        const loadDeferred = () => {
+                            console.log(`[榜单加载] 加载剩余 ${deferredKeys.length} 个榜单`);
+                            deferredKeys.forEach((key, index) => {
+                                setTimeout(() => {
+                                    this.fetchRow(key);
+                                }, index * 150);
+                            });
                         };
 
-                        const observer = new IntersectionObserver((entries) => {
-                            entries.forEach(entry => {
-                                if (entry.isIntersecting) {
-                                    const key = entry.target.getAttribute('data-key');
-                                    if (key && !this.rowLists[key]) {
-                                        console.log(`[懒加载] 进入视口: ${key}`);
-                                        this.fetchRow(key);
-                                    }
-                                }
-                            });
-                        }, options);
-
-                        // 观察所有带 data-key 的 section
-                        const sections = document.querySelectorAll('.section-container[data-key]');
-                        sections.forEach(s => observer.observe(s));
-                    });
+                        // 使用 requestIdleCallback 或 setTimeout 延迟加载
+                        if ('requestIdleCallback' in window) {
+                            requestIdleCallback(loadDeferred, { timeout: 2000 });
+                        } else {
+                            setTimeout(loadDeferred, 1000);
+                        }
+                    }
                 },
 
                 // 🎲 核心：全类别随机混搭抓取
@@ -3914,8 +3999,6 @@
                             }
                         }).catch(() => { });
                 },
-
-
 
                 autoSearch(name) {
                     this.keyword = name;

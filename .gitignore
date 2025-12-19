@@ -13,7 +13,7 @@ cache.db-shm
 db.json
 capacitor.config.json
 app-debug.apk
-
+public/cache
 
 
 

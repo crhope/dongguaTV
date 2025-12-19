@@ -1,6 +1,6 @@
 // Service Worker with Image Caching for dongguaTV
-// v9: Removed client-side SHA256 to fix login on some browsers
-const CACHE_VERSION = 'v9';
+// v11: Fixed info modal rendering issue
+const CACHE_VERSION = 'v11';
 const STATIC_CACHE = 'donggua-static-' + CACHE_VERSION;
 const IMAGE_CACHE = 'donggua-images-' + CACHE_VERSION;
 
