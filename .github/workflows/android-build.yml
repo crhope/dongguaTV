@@ -31,24 +31,16 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # 保险措施：创建 www 目录并复制 public 内容
+      # 保险措施：创建 www 目录并复制 public 内容 (防止 CLI 回退默认 www 时报错)
       - name: Prepare Web Assets
         run: |
           mkdir -p www
-          cp -r public/* www/ || echo "No files in public"
-          echo "<html><body>E视界</body></html>" > www/index.html
+          if [ -d "public" ]; then
+            cp -r public/* www/
+          else
+            echo "<html><body>E视界</body></html>" > www/index.html
+          fi
           echo "Created www directory manually as fallback"
-          
-          # 强制重写配置文件 (确保格式正确)
-          echo '{
-            "appId": "com.ednovas.donguatv",
-            "appName": "E视界",
-            "webDir": "www",
-            "server": {
-              "url": "https://ednovas.video",
-              "cleartext": true
-            }
-          }' > capacitor.config.json
 
       # 显示当前 Capacitor 配置
       - name: Show Capacitor Config
